@@ -43,14 +43,22 @@ export default function AdminLayout({ children }: AdminLayoutProps) {
     { name: "Settings", href: "/admin/settings", icon: Settings },
   ]
 
-  const handleSignOut = () => {
-    // Clear authentication
-    localStorage.removeItem("isLoggedIn")
-    sessionStorage.removeItem("isLoggedIn")
-    document.cookie = "auth-token=; path=/; expires=Thu, 01 Jan 1970 00:00:01 GMT"
+  const handleSignOut = async () => {
+    try {
+      // Call the logout API
+      await fetch("/api/auth/logout", {
+        method: "POST",
+      })
 
-    // Redirect to home
-    router.push("/")
+      // Clear client-side auth state
+      localStorage.removeItem("isLoggedIn")
+      sessionStorage.removeItem("isLoggedIn")
+
+      // Redirect to home
+      router.push("/")
+    } catch (error) {
+      console.error("Logout error:", error)
+    }
   }
 
   return (

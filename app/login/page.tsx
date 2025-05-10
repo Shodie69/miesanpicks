@@ -21,14 +21,21 @@ export default function LoginPage() {
     setIsLoading(true)
 
     try {
-      // Simple client-side authentication for demo purposes
-      if (username === "admin" && password === "password") {
-        // Set a simple client-side indicator of login
+      // Call the login API
+      const response = await fetch("/api/auth/login", {
+        method: "POST",
+        headers: {
+          "Content-Type": "application/json",
+        },
+        body: JSON.stringify({ username, password }),
+      })
+
+      const data = await response.json()
+
+      if (data.success) {
+        // Set client-side indicators of login
         localStorage.setItem("isLoggedIn", "true")
         sessionStorage.setItem("isLoggedIn", "true")
-
-        // Set a cookie for server-side auth check
-        document.cookie = "auth-token=demo-token; path=/; max-age=604800" // 1 week
 
         toast({
           title: "Login successful",
