@@ -1,23 +1,42 @@
-import { redirect } from "next/navigation"
-import { cookies } from "next/headers"
 import AdminLayout from "@/components/admin-layout"
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card"
 import { Button } from "@/components/ui/button"
 import { Plus, ShoppingBag, TrendingUp } from "lucide-react"
 import Link from "next/link"
-import { getShopData, getProducts } from "@/lib/shop-data"
+import { getProducts } from "@/lib/db/products"
+import { getCategories } from "@/lib/db/categories"
+import { getUserProfile } from "@/lib/db/users"
+import { protectRoute } from "@/lib/auth"
+import { createServerSupabaseClient } from "@/lib/supabase"
 
 export default async function AdminDashboard() {
-  // Check for authentication cookie
-  const hasAuthCookie = cookies().has("auth-token")
+  // Protect this route
+  await protectRoute()
 
-  // Redirect if not authenticated
-  if (!hasAuthCookie) {
-    redirect("/login")
+  // Get Supabase client
+  const supabase = createServerSupabaseClient()
+
+  // Get current user
+  const {
+    data: { user },
+  } = await supabase.auth.getUser()
+
+  if (!user) {
+    return null // This should be handled by protectRoute, but just in case
   }
 
-  const shopData = await getShopData()
+  // Get data
   const products = await getProducts()
+  const categories = await getCategories()
+  const userProfile = await getUserProfile(user.id)
+
+  // Calculate analytics data from products
+  const analytics = {
+    views: 36, // Mock data for now
+    clicks: products.reduce((sum, product) => sum + (product.clicks || 0), 0),
+    conversions: 0, // Mock data for now
+    earnings: products.reduce((sum, product) => sum + (product.commission || 0), 0),
+  }
 
   return (
     <AdminLayout>
@@ -35,7 +54,7 @@ export default async function AdminDashboard() {
           <CardHeader className="pb-2">
             <CardDescription>Total Views</CardDescription>
             <CardTitle className="text-2xl flex items-center">
-              {shopData.analytics.views}
+              {analytics.views}
               <TrendingUp className="h-4 w-4 ml-2 text-green-500" />
             </CardTitle>
           </CardHeader>
@@ -45,7 +64,7 @@ export default async function AdminDashboard() {
           <CardHeader className="pb-2">
             <CardDescription>Total Clicks</CardDescription>
             <CardTitle className="text-2xl flex items-center">
-              {shopData.analytics.clicks}
+              {analytics.clicks}
               <TrendingUp className="h-4 w-4 ml-2 text-green-500" />
             </CardTitle>
           </CardHeader>
@@ -55,7 +74,7 @@ export default async function AdminDashboard() {
           <CardHeader className="pb-2">
             <CardDescription>Conversions</CardDescription>
             <CardTitle className="text-2xl flex items-center">
-              {shopData.analytics.conversions}
+              {analytics.conversions}
               <TrendingUp className="h-4 w-4 ml-2 text-green-500" />
             </CardTitle>
           </CardHeader>
@@ -65,7 +84,7 @@ export default async function AdminDashboard() {
           <CardHeader className="pb-2">
             <CardDescription>Earnings</CardDescription>
             <CardTitle className="text-2xl flex items-center">
-              ${shopData.analytics.earnings.toFixed(2)}
+              ${analytics.earnings.toFixed(2)}
               <TrendingUp className="h-4 w-4 ml-2 text-green-500" />
             </CardTitle>
           </CardHeader>
@@ -83,9 +102,9 @@ export default async function AdminDashboard() {
               <div key={product.id} className="flex items-center justify-between border-b pb-2">
                 <div className="flex items-center gap-3">
                   <div className="w-12 h-12 bg-gray-100 rounded-md flex items-center justify-center">
-                    {product.image ? (
+                    {product.image_url ? (
                       <img
-                        src={product.image || "/placeholder.svg"}
+                        src={product.image_url || "/placeholder.svg"}
                         alt={product.title}
                         className="w-full h-full object-cover rounded-md"
                       />

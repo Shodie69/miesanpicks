@@ -2,7 +2,6 @@
 
 import { useState, useEffect } from "react"
 import { DragDropContext, Droppable, Draggable } from "@hello-pangea/dnd"
-import { redirect } from "next/navigation"
 import { Button } from "@/components/ui/button"
 import { Plus, Search, Filter, GripVertical } from "lucide-react"
 import Link from "next/link"
@@ -33,7 +32,8 @@ export default function AdminProductsPage() {
       document.cookie.includes("auth-token=")
 
     if (!isLoggedIn) {
-      redirect("/login")
+      window.location.href = "/login"
+      return
     }
 
     // Fetch products

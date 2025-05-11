@@ -2,7 +2,7 @@
 
 import type React from "react"
 
-import { useState } from "react"
+import { useState, useEffect } from "react"
 import { useRouter } from "next/navigation"
 import AdminLayout from "@/components/admin-layout"
 import { Card, CardContent, CardDescription, CardFooter, CardHeader, CardTitle } from "@/components/ui/card"
@@ -12,8 +12,14 @@ import { Label } from "@/components/ui/label"
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs"
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select"
 import { toast } from "@/hooks/use-toast"
-import { Loader2, X, Upload, LinkIcon, Wand } from "lucide-react"
+import { Loader2, LinkIcon, Wand } from "lucide-react"
 import ProductLinkPreview from "@/components/product-link-preview"
+import { extractProductInfo } from "@/lib/product-extractor"
+import { generateProductReview } from "@/lib/ai-review-generator"
+import ImageUpload from "@/components/image-upload"
+import { createProduct } from "@/lib/db/products"
+import { getCategories } from "@/lib/db/categories"
+import { createClientSupabaseClient } from "@/lib/supabase"
 
 export default function AddProductPage() {
   const router = useRouter()
@@ -24,14 +30,47 @@ export default function AddProductPage() {
   const [isGeneratingReview, setIsGeneratingReview] = useState(false)
   const [productInfo, setProductInfo] = useState<{
     title: string
-    image: string
-    price?: string
+    image_url?: string
+    price?: string | number
     isCommissionable?: boolean
     category?: string
+    description?: string
   } | null>(null)
   const [productReview, setProductReview] = useState("")
   const [category, setCategory] = useState("everything")
   const [language, setLanguage] = useState("english")
+  const [categories, setCategories] = useState([])
+  const supabase = createClientSupabaseClient()
+
+  useEffect(() => {
+    // Check for authentication
+    const checkAuth = async () => {
+      const { data } = await supabase.auth.getSession()
+      if (!data.session) {
+        router.push("/login")
+        return
+      }
+
+      // Fetch categories
+      fetchCategories()
+    }
+
+    checkAuth()
+  }, [router, supabase])
+
+  const fetchCategories = async () => {
+    try {
+      const categoriesData = await getCategories()
+      setCategories(categoriesData)
+    } catch (error) {
+      console.error("Error fetching categories:", error)
+      toast({
+        title: "Error",
+        description: "Failed to load categories",
+        variant: "destructive",
+      })
+    }
+  }
 
   const handleUrlChange = (e: React.ChangeEvent<HTMLInputElement>) => {
     setUrl(e.target.value)
@@ -50,35 +89,20 @@ export default function AddProductPage() {
     setIsExtracting(true)
 
     try {
-      // Simulate API call
-      await new Promise((resolve) => setTimeout(resolve, 1500))
+      // Extract product info
+      const extractedInfo = await extractProductInfo(url)
 
-      // Determine category based on URL
-      let detectedCategory = "everything"
-      if (url.toLowerCase().includes("tablet")) detectedCategory = "tablet"
-      if (url.toLowerCase().includes("laptop")) detectedCategory = "laptops"
-      if (url.toLowerCase().includes("keyboard")) detectedCategory = "keyboard"
-      if (url.toLowerCase().includes("mouse")) detectedCategory = "mousepad"
-
-      // Mock extracted data
-      const mockInfo = {
-        title: url.includes("shopee")
-          ? "Hamisan Hijo Soap 10pcs | Shopee Philippines"
-          : "Product from " + (new URL(url).hostname || "Unknown"),
-        image: "/placeholder.svg?height=160&width=160",
-        price: "299",
-        isCommissionable: true,
-        category: detectedCategory,
+      setProductInfo(extractedInfo)
+      if (extractedInfo.category) {
+        setCategory(extractedInfo.category)
       }
-
-      setProductInfo(mockInfo)
-      setCategory(detectedCategory)
 
       toast({
         title: "Product info extracted",
         description: "Title and thumbnail have been extracted successfully",
       })
     } catch (error) {
+      console.error("Extraction error:", error)
       toast({
         title: "Extraction failed",
         description: "Could not extract product information from the URL",
@@ -102,13 +126,16 @@ export default function AddProductPage() {
     setIsGeneratingReview(true)
 
     try {
-      // Simulate API call
-      await new Promise((resolve) => setTimeout(resolve, 2000))
-
-      // Mock review
-      const review = `This ${productInfo.title.split("|")[0]} exceeded my expectations! The quality is outstanding, and it's exactly what I was looking for. Shipping was fast and the packaging was secure. I've been using it for a few weeks now and it still works perfectly. The design is sleek and modern, and it fits well with my other devices. I would definitely recommend this product to anyone looking for a reliable and high-quality option.`
-
+      // Generate review using AI
+      const review = await generateProductReview(productInfo.title)
       setProductReview(review)
+
+      // Update product info with the review as description
+      setProductInfo({
+        ...productInfo,
+        description: review,
+      })
+
       toast({
         title: "Review generated",
         description: "AI-generated review is ready",
@@ -121,6 +148,15 @@ export default function AddProductPage() {
       })
     } finally {
       setIsGeneratingReview(false)
+    }
+  }
+
+  const handleImageUploaded = (url: string) => {
+    if (productInfo) {
+      setProductInfo({
+        ...productInfo,
+        image_url: url,
+      })
     }
   }
 
@@ -137,14 +173,23 @@ export default function AddProductPage() {
     setIsLoading(true)
 
     try {
-      // Update product info with selected category
-      const updatedProductInfo = {
-        ...productInfo,
-        category: category,
+      // Prepare product data
+      const productData = {
+        title: productInfo.title,
+        description: productInfo.description || productReview,
+        price: typeof productInfo.price === "string" ? Number.parseFloat(productInfo.price) : productInfo.price,
+        image_url: productInfo.image_url,
+        source: new URL(url).hostname.replace("www.", ""),
+        source_url: url,
+        categories: [category],
       }
 
-      // Save product logic would go here
-      await new Promise((resolve) => setTimeout(resolve, 1000)) // Simulating API call
+      // Create product
+      const result = await createProduct(productData)
+
+      if (!result.success) {
+        throw new Error(result.error || "Failed to create product")
+      }
 
       toast({
         title: "Product saved",
@@ -153,9 +198,10 @@ export default function AddProductPage() {
 
       router.push("/admin/products")
     } catch (error) {
+      console.error("Save error:", error)
       toast({
         title: "Save failed",
-        description: "Could not save the product",
+        description: error.message || "Could not save the product",
         variant: "destructive",
       })
     } finally {
@@ -171,6 +217,7 @@ export default function AddProductPage() {
         <Tabs value={activeTab} onValueChange={setActiveTab}>
           <TabsList className="mb-4">
             <TabsTrigger value="link">Link</TabsTrigger>
+            <TabsTrigger value="media">Media</TabsTrigger>
             <TabsTrigger value="review">Review</TabsTrigger>
           </TabsList>
 
@@ -191,16 +238,6 @@ export default function AddProductPage() {
                         value={url}
                         onChange={handleUrlChange}
                       />
-                      {url && (
-                        <Button
-                          variant="ghost"
-                          size="icon"
-                          className="absolute right-2 top-1/2 transform -translate-y-1/2 h-6 w-6"
-                          onClick={() => setUrl("")}
-                        >
-                          <X className="h-4 w-4" />
-                        </Button>
-                      )}
                     </div>
                     <Button onClick={handleExtractInfo} disabled={isExtracting || !url}>
                       {isExtracting ? <Loader2 className="h-4 w-4 animate-spin" /> : "Extract"}
@@ -228,24 +265,17 @@ export default function AddProductPage() {
                     </div>
 
                     <div className="space-y-2">
-                      <Label>Thumbnail</Label>
-                      <div className="flex items-center gap-4">
-                        <div className="w-20 h-20 bg-gray-100 rounded-md overflow-hidden">
-                          {productInfo.image ? (
-                            <img
-                              src={productInfo.image || "/placeholder.svg"}
-                              alt="Product thumbnail"
-                              className="w-full h-full object-cover"
-                            />
-                          ) : (
-                            <div className="w-full h-full flex items-center justify-center">
-                              <LinkIcon className="h-6 w-6 text-gray-400" />
-                            </div>
-                          )}
-                        </div>
-                        <Button variant="outline" className="h-9">
-                          <Upload className="h-4 w-4 mr-2" /> Upload Image/Video
-                        </Button>
+                      <Label htmlFor="price">Price</Label>
+                      <div className="relative">
+                        <span className="absolute left-3 top-1/2 transform -translate-y-1/2 text-gray-500">₱</span>
+                        <Input
+                          id="price"
+                          type="number"
+                          value={productInfo.price || ""}
+                          onChange={(e) => setProductInfo({ ...productInfo, price: e.target.value })}
+                          className="pl-8"
+                          placeholder="0.00"
+                        />
                       </div>
                     </div>
 
@@ -257,12 +287,11 @@ export default function AddProductPage() {
                             <SelectValue placeholder="Select category" />
                           </SelectTrigger>
                           <SelectContent>
-                            <SelectItem value="everything">Everything</SelectItem>
-                            <SelectItem value="tablet">Tablet</SelectItem>
-                            <SelectItem value="laptops">Laptop</SelectItem>
-                            <SelectItem value="keyboard">Keyboard</SelectItem>
-                            <SelectItem value="mousepad">Mousepad</SelectItem>
-                            <SelectItem value="guide">Guide</SelectItem>
+                            {categories.map((cat) => (
+                              <SelectItem key={cat.id} value={cat.slug}>
+                                {cat.name}
+                              </SelectItem>
+                            ))}
                           </SelectContent>
                         </Select>
                       </div>
@@ -283,32 +312,59 @@ export default function AddProductPage() {
                         </Select>
                       </div>
                     </div>
-
-                    <Button
-                      className="w-full bg-orange-500 hover:bg-orange-600"
-                      onClick={handleGenerateReview}
-                      disabled={isGeneratingReview}
-                    >
-                      {isGeneratingReview ? (
-                        <>
-                          <Loader2 className="h-4 w-4 mr-2 animate-spin" />
-                          Generating Review...
-                        </>
-                      ) : (
-                        <>
-                          <Wand className="h-4 w-4 mr-2" />
-                          Generate Product Review
-                        </>
-                      )}
-                    </Button>
-
-                    <p className="text-xs text-center text-gray-500">
-                      <a href="#" className="text-orange-500 hover:underline">
-                        Click here
-                      </a>{" "}
-                      to read offer information from advertiser
-                    </p>
                   </>
+                )}
+              </CardContent>
+              <CardFooter className="flex justify-between">
+                <Button variant="outline" onClick={() => router.back()}>
+                  Cancel
+                </Button>
+                <Button
+                  className="bg-orange-500 hover:bg-orange-600"
+                  onClick={handleSave}
+                  disabled={isLoading || !productInfo}
+                >
+                  {isLoading ? (
+                    <>
+                      <Loader2 className="h-4 w-4 mr-2 animate-spin" />
+                      Saving...
+                    </>
+                  ) : (
+                    "Save"
+                  )}
+                </Button>
+              </CardFooter>
+            </Card>
+          </TabsContent>
+
+          <TabsContent value="media">
+            <Card>
+              <CardHeader>
+                <CardTitle>Product Media</CardTitle>
+                <CardDescription>Upload images for your product</CardDescription>
+              </CardHeader>
+              <CardContent>
+                {!productInfo ? (
+                  <div className="text-center py-8">
+                    <p className="text-gray-500">Please extract product information first</p>
+                    <Button variant="outline" className="mt-4" onClick={() => setActiveTab("link")}>
+                      Go to Link Tab
+                    </Button>
+                  </div>
+                ) : (
+                  <div className="space-y-4">
+                    <div className="grid grid-cols-1 gap-4">
+                      <div>
+                        <Label className="mb-2 block">Product Image</Label>
+                        <ImageUpload
+                          initialImage={productInfo.image_url}
+                          onImageUploaded={handleImageUploaded}
+                          onImageRemoved={() => setProductInfo({ ...productInfo, image_url: undefined })}
+                          className="h-64"
+                        />
+                      </div>
+                    </div>
+                  </div>
                 )}
               </CardContent>
               <CardFooter className="flex justify-between">
@@ -414,13 +470,16 @@ export default function AddProductPage() {
                           Generating Review...
                         </>
                       ) : (
-                        "Generate Product Review"
+                        <>
+                          <Wand className="h-4 w-4 mr-2" />
+                          Generate Product Review
+                        </>
                       )}
                     </Button>
                   </div>
                 ) : (
                   <div className="space-y-4">
-                    <ProductLinkPreview title={productInfo.title} image={productInfo.image} url={url} />
+                    <ProductLinkPreview title={productInfo.title} image={productInfo.image_url} url={url} />
 
                     <div className="bg-gray-50 rounded-lg p-4">
                       <h3 className="font-medium mb-2">AI-Generated Review</h3>
@@ -428,6 +487,7 @@ export default function AddProductPage() {
                     </div>
 
                     <Button className="w-full bg-orange-500 hover:bg-orange-600" onClick={handleGenerateReview}>
+                      <Wand className="h-4 w-4 mr-2" />
                       Regenerate Review
                     </Button>
                   </div>

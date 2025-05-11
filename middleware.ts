@@ -1,7 +1,12 @@
 import { NextResponse } from "next/server"
 import type { NextRequest } from "next/server"
+import { createMiddlewareClient } from "@supabase/auth-helpers-nextjs"
 
-export function middleware(request: NextRequest) {
+export async function middleware(request: NextRequest) {
+  // Create a Supabase client configured to use cookies
+  const res = NextResponse.next()
+  const supabase = createMiddlewareClient({ req: request, res })
+
   // Get the pathname of the request
   const path = request.nextUrl.pathname
 
@@ -9,14 +14,16 @@ export function middleware(request: NextRequest) {
   const isAdminRoute = path.startsWith("/admin")
 
   // Check if the user is authenticated
-  const isAuthenticated = request.cookies.has("auth-token")
+  const {
+    data: { session },
+  } = await supabase.auth.getSession()
 
   // If trying to access admin routes without authentication, redirect to login
-  if (isAdminRoute && !isAuthenticated) {
+  if (isAdminRoute && !session) {
     return NextResponse.redirect(new URL("/login", request.url))
   }
 
-  return NextResponse.next()
+  return res
 }
 
 // Configure the paths that should trigger this middleware

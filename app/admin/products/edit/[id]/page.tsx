@@ -10,10 +10,13 @@ import { Label } from "@/components/ui/label"
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs"
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select"
 import { toast } from "@/hooks/use-toast"
-import { Loader2, Upload, LinkIcon } from "lucide-react"
-import { getProductById } from "@/lib/shop-data"
+import { Loader2 } from "lucide-react"
+import { getProductById, updateProduct, deleteProduct } from "@/lib/db/products"
+import { getCategories } from "@/lib/db/categories"
 import { Textarea } from "@/components/ui/textarea"
 import { Switch } from "@/components/ui/switch"
+import ImageUpload from "@/components/image-upload"
+import { createClientSupabaseClient } from "@/lib/supabase"
 
 export default function EditProductPage({ params }) {
   const router = useRouter()
@@ -21,8 +24,11 @@ export default function EditProductPage({ params }) {
 
   const [isLoading, setIsLoading] = useState(true)
   const [isSaving, setIsSaving] = useState(false)
+  const [isDeleting, setIsDeleting] = useState(false)
   const [product, setProduct] = useState(null)
   const [activeTab, setActiveTab] = useState("details")
+  const [categories, setCategories] = useState([])
+  const supabase = createClientSupabaseClient()
 
   // Form state
   const [title, setTitle] = useState("")
@@ -30,59 +36,82 @@ export default function EditProductPage({ params }) {
   const [discount, setDiscount] = useState("")
   const [category, setCategory] = useState("everything")
   const [description, setDescription] = useState("")
+  const [imageUrl, setImageUrl] = useState("")
   const [isHidden, setIsHidden] = useState(false)
   const [isPinned, setIsPinned] = useState(false)
 
-  // Categories
-  const [categories, setCategories] = useState([
-    { id: "everything", name: "Everything" },
-    { id: "tablet", name: "Tablet" },
-    { id: "laptops", name: "Laptops" },
-    { id: "keyboard", name: "Keyboard" },
-    { id: "mousepad", name: "Mousepad" },
-    { id: "guide", name: "Guide" },
-  ])
-
   useEffect(() => {
-    const fetchProduct = async () => {
-      try {
-        const productData = await getProductById(id)
+    // Check for authentication
+    const checkAuth = async () => {
+      const { data } = await supabase.auth.getSession()
+      if (!data.session) {
+        router.push("/login")
+        return
+      }
 
-        if (!productData) {
-          toast({
-            title: "Product not found",
-            description: "The requested product could not be found",
-            variant: "destructive",
-          })
-          router.push("/admin/products")
-          return
-        }
+      // Fetch product and categories
+      fetchProduct()
+      fetchCategories()
+    }
 
-        setProduct(productData)
+    checkAuth()
+  }, [id, router, supabase])
 
-        // Set form values
-        setTitle(productData.title || "")
-        setPrice(productData.price?.toString() || "")
-        setDiscount(productData.discount?.toString() || "")
-        setCategory(productData.category || "everything")
-        setDescription(productData.description || "")
-        setIsHidden(productData.isHidden || false)
-        setIsPinned(productData.isPinned || false)
+  const fetchProduct = async () => {
+    try {
+      const productData = await getProductById(id)
 
-        setIsLoading(false)
-      } catch (error) {
-        console.error("Error fetching product:", error)
+      if (!productData) {
         toast({
-          title: "Error",
-          description: "Failed to load product details",
+          title: "Product not found",
+          description: "The requested product could not be found",
           variant: "destructive",
         })
         router.push("/admin/products")
+        return
       }
-    }
 
-    fetchProduct()
-  }, [id, router])
+      setProduct(productData)
+
+      // Set form values
+      setTitle(productData.title || "")
+      setPrice(productData.price?.toString() || "")
+      setDiscount(productData.discount_percentage?.toString() || "")
+      setCategory(productData.categories?.[0] || "everything")
+      setDescription(productData.description || "")
+      setImageUrl(productData.image_url || "")
+      setIsHidden(productData.is_hidden || false)
+      setIsPinned(productData.is_pinned || false)
+
+      setIsLoading(false)
+    } catch (error) {
+      console.error("Error fetching product:", error)
+      toast({
+        title: "Error",
+        description: "Failed to load product details",
+        variant: "destructive",
+      })
+      router.push("/admin/products")
+    }
+  }
+
+  const fetchCategories = async () => {
+    try {
+      const categoriesData = await getCategories()
+      setCategories(categoriesData)
+    } catch (error) {
+      console.error("Error fetching categories:", error)
+      toast({
+        title: "Error",
+        description: "Failed to load categories",
+        variant: "destructive",
+      })
+    }
+  }
+
+  const handleImageUploaded = (url: string) => {
+    setImageUrl(url)
+  }
 
   const handleSave = async () => {
     setIsSaving(true)
@@ -99,8 +128,24 @@ export default function EditProductPage({ params }) {
         return
       }
 
-      // In a real app, this would be an API call to update the product
-      await new Promise((resolve) => setTimeout(resolve, 1000))
+      // Prepare product data
+      const productData = {
+        title,
+        description,
+        price: price ? Number.parseFloat(price) : null,
+        discount_percentage: discount ? Number.parseFloat(discount) : null,
+        image_url: imageUrl,
+        is_hidden: isHidden,
+        is_pinned: isPinned,
+        categories: [category],
+      }
+
+      // Update product
+      const result = await updateProduct(id, productData)
+
+      if (!result.success) {
+        throw new Error(result.error || "Failed to update product")
+      }
 
       toast({
         title: "Product updated",
@@ -112,11 +157,44 @@ export default function EditProductPage({ params }) {
       console.error("Error saving product:", error)
       toast({
         title: "Error",
-        description: "Failed to update product",
+        description: error.message || "Failed to update product",
         variant: "destructive",
       })
     } finally {
       setIsSaving(false)
+    }
+  }
+
+  const handleDelete = async () => {
+    if (!confirm(`Are you sure you want to delete "${title}"?`)) {
+      return
+    }
+
+    setIsDeleting(true)
+
+    try {
+      const result = await deleteProduct(id)
+
+      if (!result.success) {
+        throw new Error(result.error || "Failed to delete product")
+      }
+
+      toast({
+        title: "Product deleted",
+        description: "The product has been successfully deleted",
+        variant: "destructive",
+      })
+
+      router.push("/admin/products")
+    } catch (error) {
+      console.error("Error deleting product:", error)
+      toast({
+        title: "Error",
+        description: error.message || "Failed to delete product",
+        variant: "destructive",
+      })
+    } finally {
+      setIsDeleting(false)
     }
   }
 
@@ -205,7 +283,7 @@ export default function EditProductPage({ params }) {
                     </SelectTrigger>
                     <SelectContent>
                       {categories.map((cat) => (
-                        <SelectItem key={cat.id} value={cat.id}>
+                        <SelectItem key={cat.id} value={cat.slug}>
                           {cat.name}
                         </SelectItem>
                       ))}
@@ -235,26 +313,14 @@ export default function EditProductPage({ params }) {
               </CardHeader>
               <CardContent>
                 <div className="space-y-4">
-                  <div className="border-2 border-dashed border-gray-300 rounded-lg p-6 text-center">
-                    <div className="mx-auto w-32 h-32 mb-4 bg-gray-100 rounded-md overflow-hidden">
-                      {product.image ? (
-                        <img
-                          src={product.image || "/placeholder.svg"}
-                          alt={product.title}
-                          className="w-full h-full object-cover"
-                        />
-                      ) : (
-                        <div className="w-full h-full flex items-center justify-center">
-                          <LinkIcon className="h-10 w-10 text-gray-400" />
-                        </div>
-                      )}
-                    </div>
-
-                    <Button variant="outline" className="mx-auto">
-                      <Upload className="h-4 w-4 mr-2" /> Upload Image
-                    </Button>
-
-                    <p className="text-xs text-gray-500 mt-2">Supported formats: JPEG, PNG, GIF, WebP</p>
+                  <div>
+                    <Label className="mb-2 block">Product Image</Label>
+                    <ImageUpload
+                      initialImage={imageUrl}
+                      onImageUploaded={handleImageUploaded}
+                      onImageRemoved={() => setImageUrl("")}
+                      className="h-64"
+                    />
                   </div>
                 </div>
               </CardContent>
@@ -295,21 +361,15 @@ export default function EditProductPage({ params }) {
                 </div>
 
                 <div className="pt-4 border-t">
-                  <Button
-                    variant="destructive"
-                    className="w-full"
-                    onClick={() => {
-                      if (confirm(`Are you sure you want to delete "${product.title}"?`)) {
-                        toast({
-                          title: "Product deleted",
-                          description: `${product.title} has been deleted`,
-                          variant: "destructive",
-                        })
-                        router.push("/admin/products")
-                      }
-                    }}
-                  >
-                    Delete Product
+                  <Button variant="destructive" className="w-full" onClick={handleDelete} disabled={isDeleting}>
+                    {isDeleting ? (
+                      <>
+                        <Loader2 className="h-4 w-4 mr-2 animate-spin" />
+                        Deleting...
+                      </>
+                    ) : (
+                      "Delete Product"
+                    )}
                   </Button>
                 </div>
               </CardContent>

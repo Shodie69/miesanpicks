@@ -14,26 +14,26 @@ interface ProductCardProps {
   product: {
     id: string
     title: string
-    image?: string
+    image_url?: string
     price?: number
     source: string
     rating?: number
-    reviewCount?: number
-    discount?: number
+    review_count?: number
+    discount_percentage?: number
     clicks?: number
     shares?: number
     commission?: number
     category?: string
-    isHidden?: boolean
-    isPinned?: boolean
+    is_hidden?: boolean
+    is_pinned?: boolean
   }
   isLoggedIn: boolean
 }
 
 export default function ProductCard({ product, isLoggedIn }: ProductCardProps) {
   const router = useRouter()
-  const [isHidden, setIsHidden] = useState(product.isHidden || false)
-  const [isPinned, setIsPinned] = useState(product.isPinned || false)
+  const [isHidden, setIsHidden] = useState(product.is_hidden || false)
+  const [isPinned, setIsPinned] = useState(product.is_pinned || false)
 
   const handleEdit = () => {
     router.push(`/admin/products/edit/${product.id}`)
@@ -65,21 +65,36 @@ export default function ProductCard({ product, isLoggedIn }: ProductCardProps) {
     }
   }
 
+  // Check if the image is a Supabase Storage URL
+  const isSupabaseImage = product.image_url && product.image_url.includes("supabase.co")
+
   return (
     <div
       className={`border rounded-lg overflow-hidden ${isHidden ? "opacity-60" : ""} ${isPinned ? "ring-2 ring-orange-500" : ""}`}
     >
       <div className="relative h-40 bg-gray-100">
-        {product.image ? (
-          <Image src={product.image || "/placeholder.svg"} alt={product.title} fill className="object-cover" />
+        {product.image_url ? (
+          isSupabaseImage ? (
+            // For Supabase Storage images, use regular img tag
+            <img
+              src={product.image_url || "/placeholder.svg"}
+              alt={product.title}
+              className="w-full h-full object-cover"
+            />
+          ) : (
+            // For other images, use Next.js Image component
+            <Image src={product.image_url || "/placeholder.svg"} alt={product.title} fill className="object-cover" />
+          )
         ) : (
           <div className="absolute inset-0 flex items-center justify-center">
             <h3 className="text-lg font-bold">{product.title.substring(0, 1)}</h3>
           </div>
         )}
 
-        {product.discount && (
-          <div className="absolute bottom-0 right-0 p-1 bg-red-500 text-white text-[10px]">-{product.discount}%</div>
+        {product.discount_percentage && (
+          <div className="absolute bottom-0 right-0 p-1 bg-red-500 text-white text-[10px]">
+            -{product.discount_percentage}%
+          </div>
         )}
 
         {isPinned && <div className="absolute top-0 left-0 p-1 bg-orange-500 text-white text-[10px]">PINNED</div>}
@@ -139,7 +154,7 @@ export default function ProductCard({ product, isLoggedIn }: ProductCardProps) {
                 </svg>
               ))}
             </div>
-            <span className="text-[10px] text-gray-500">({product.reviewCount})</span>
+            <span className="text-[10px] text-gray-500">({product.review_count})</span>
           </div>
         )}
         {product.price && <p className="text-xs font-semibold mt-1">₱ {product.price.toLocaleString()}</p>}

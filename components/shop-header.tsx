@@ -25,22 +25,14 @@ export default function ShopHeader({ shopData, isLoggedIn }: ShopHeaderProps) {
   const router = useRouter()
   const [showProfileMenu, setShowProfileMenu] = useState(false)
 
-  const handleSignOut = async () => {
-    try {
-      // Call the logout API
-      await fetch("/api/auth/logout", {
-        method: "POST",
-      })
+  const handleSignOut = () => {
+    // Clear authentication
+    localStorage.removeItem("isLoggedIn")
+    sessionStorage.removeItem("isLoggedIn")
+    document.cookie = "auth-token=; path=/; expires=Thu, 01 Jan 1970 00:00:01 GMT"
 
-      // Clear client-side auth state
-      localStorage.removeItem("isLoggedIn")
-      sessionStorage.removeItem("isLoggedIn")
-
-      // Redirect to home
-      router.push("/")
-    } catch (error) {
-      console.error("Logout error:", error)
-    }
+    // Redirect to home
+    router.push("/")
   }
 
   const handleProfilePhotoUpload = () => {
@@ -142,12 +134,13 @@ export default function ShopHeader({ shopData, isLoggedIn }: ShopHeaderProps) {
         <div className="flex items-center justify-center gap-1">
           <h1 className="text-xl font-bold text-yellow-500">{shopData.name}</h1>
         </div>
-        <p className="text-sm text-gray-500 flex items-center justify-center gap-1">
+        {/* Fixed: Changed p to div to avoid nesting div inside p */}
+        <div className="text-sm text-gray-500 flex items-center justify-center gap-1">
           @{shopData.handle}
           <Badge variant="outline" className="h-4 ml-1 px-1 rounded-sm">
             <span className="text-[10px]">C</span>
           </Badge>
-        </p>
+        </div>
         <div className="flex gap-3 mt-2 justify-center">
           {shopData.socialLinks.facebook && (
             <Button variant="ghost" size="icon" className="h-8 w-8 rounded-full bg-gray-100">

@@ -6,7 +6,9 @@ import { useState, useEffect } from "react"
 import Link from "next/link"
 import { useRouter, usePathname } from "next/navigation"
 import { Button } from "@/components/ui/button"
-import { ShoppingBag, LayoutDashboard, Package, Settings, LogOut, Menu, X, Tag } from "lucide-react"
+import { ShoppingBag, LayoutDashboard, Package, Settings, LogOut, Menu, X, Tag, Database } from "lucide-react"
+import { createClientSupabaseClient } from "@/lib/supabase"
+import { toast } from "@/hooks/use-toast"
 
 interface AdminLayoutProps {
   children: React.ReactNode
@@ -17,20 +19,22 @@ export default function AdminLayout({ children }: AdminLayoutProps) {
   const pathname = usePathname()
   const [isMobileMenuOpen, setIsMobileMenuOpen] = useState(false)
   const [isMounted, setIsMounted] = useState(false)
+  const supabase = createClientSupabaseClient()
 
   useEffect(() => {
     setIsMounted(true)
 
     // Check if user is logged in
-    const isLoggedIn =
-      localStorage.getItem("isLoggedIn") === "true" ||
-      sessionStorage.getItem("isLoggedIn") === "true" ||
-      document.cookie.includes("auth-token=")
+    const checkAuth = async () => {
+      const { data } = await supabase.auth.getSession()
 
-    if (!isLoggedIn) {
-      router.push("/login")
+      if (!data.session) {
+        router.push("/login")
+      }
     }
-  }, [router])
+
+    checkAuth()
+  }, [router, supabase])
 
   if (!isMounted) {
     return null
@@ -41,23 +45,31 @@ export default function AdminLayout({ children }: AdminLayoutProps) {
     { name: "Products", href: "/admin/products", icon: Package },
     { name: "Categories", href: "/admin/categories", icon: Tag },
     { name: "Settings", href: "/admin/settings", icon: Settings },
+    { name: "Database", href: "/admin/seed", icon: Database },
   ]
 
   const handleSignOut = async () => {
     try {
-      // Call the logout API
-      await fetch("/api/auth/logout", {
-        method: "POST",
-      })
+      await supabase.auth.signOut()
 
       // Clear client-side auth state
       localStorage.removeItem("isLoggedIn")
       sessionStorage.removeItem("isLoggedIn")
 
+      toast({
+        title: "Signed out",
+        description: "You have been signed out successfully",
+      })
+
       // Redirect to home
-      router.push("/")
+      router.push("/login")
     } catch (error) {
-      console.error("Logout error:", error)
+      console.error("Sign out error:", error)
+      toast({
+        title: "Sign out failed",
+        description: "An error occurred while signing out",
+        variant: "destructive",
+      })
     }
   }
 

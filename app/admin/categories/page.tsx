@@ -1,6 +1,6 @@
 "use client"
 
-import { useState } from "react"
+import { useState, useEffect } from "react"
 import { DragDropContext, Droppable, Draggable } from "@hello-pangea/dnd"
 import AdminLayout from "@/components/admin-layout"
 import { Card, CardContent, CardHeader, CardTitle, CardDescription, CardFooter } from "@/components/ui/card"
@@ -23,6 +23,18 @@ export default function CategoriesPage() {
   const [newCategory, setNewCategory] = useState("")
   const [editingCategory, setEditingCategory] = useState(null)
   const [editName, setEditName] = useState("")
+
+  useEffect(() => {
+    // Check for authentication
+    const isLoggedIn =
+      localStorage.getItem("isLoggedIn") === "true" ||
+      sessionStorage.getItem("isLoggedIn") === "true" ||
+      document.cookie.includes("auth-token=")
+
+    if (!isLoggedIn) {
+      window.location.href = "/login"
+    }
+  }, [])
 
   const handleDragEnd = (result) => {
     if (!result.destination) return
